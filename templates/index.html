@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stock Analyzer</title>
+<style>
+    body {
+        font-family: 'Gill Sans', 'Gill Sans MT', 'Calibri', 'Trebuchet MS', sans-serif, Arial, sans-serif;
+        padding: 20px;
+        text-align: center;
+        background-color: #f7e8fd;
+    }
+    img {
+        margin-bottom: -60px;
+        margin-top: -40px;
+    }
+    .text {
+        text-align: left;
+    }
+    .container {
+        max-width: 800px;
+        margin: auto;
+        margin-bottom: 20px;
+    }
+    input, select, button, textarea {
+        width: 100%;
+        padding: 10px;
+        margin: 10px 0;
+        box-sizing: border-box;
+    }
+    #messageDisplay, #storyDisplay {
+        margin-top: 20px;
+        padding: 20px;
+        background-color: #f0f0f0;
+    }
+    .error {
+        background-color: #ffcccc;
+    }
+    .success {
+        background-color: #ccffcc;
+    }
+    .hidden {
+        display: none;
+    }
+    .left-align {
+        text-align: left;
+    }
+    #urlInput {
+        border-radius: 20px;
+    }
+    button {
+        background-color: #ffcccc;
+        color: #4b0082;
+        border: none;
+        padding: 10px 15px;
+        text-transform: uppercase;
+        border-radius: 5px;
+        cursor: pointer;
+    }
+    button:hover {
+        background-color: #4b0082;
+        color: white;
+    }
+</style>
+</head>
+<body>
+<div class="container">
+    <img src="/static/bull.png" alt="Bull Image" height="200px" width="200px"/>
+    <h1>Yahoo Finance Stock Analyzer</h1>
+    <p class="text">Welcome to Yahoo Finance Stock Analyzer! If you, just like me, are always losing money in the stock market, this app is for you. Yahoo Finance Stock Analyzer
+    is an app where you can input an url from Yahoo Finance's news, and, based on the news, the app will evaluate the sentiment of such text and based on this information,
+    it will tell you if you should buy or sell it. Additionally, Yahoo Finance Stock Analyzer is integrated with both ChatGPT, Gemini and Claude, so that you can analyze which LLM's answer fits your investing profile better.
+        Use it carefully and do not take you financial decision based entirely on it. Enjoy!</p>
+    <hr/>
+    <p class="text">Firstly, you need to provide the port in which the program is running on. </p>
+    <input type="text" id="serverAddress" placeholder="Enter server address" />
+    <p class="text">You also need to find some news that interest you and you want to perform the analysis on.
+        Once you decide which will be the lucky one, please, insert its link in the field below.</p>
+    <input type="text" id="urlInput" placeholder="Insert your Yahoo Finance news URL here." />
+    <button onclick="processURL()">Analyze</button>
+
+    <div id="resultDisplay" class="hidden">
+        <h2>Analysis Result:</h2>
+        <p class="text">Here are the results generated for the scrapping of the url that you provided</p>
+        <p class="left-align"><strong>Ticker:</strong> <span id="tickerResult"></span></p>
+        <p class="left-align"><strong>News Title:</strong> <span id="titleResult"></span></p>
+        <p class="left-align"><strong>Published Date:</strong> <span id="dateResult"></span></p>
+        <p class="left-align"><strong>Date Relevance:</strong> <span id="dateRelevanceValue"></span></p>
+        <p class="left-align"><strong>News Text:</strong> <span id="textResult"></span></p>
+
+    </div>
+    <hr/>
+    <p class="text">Now, click the button below to evaluate the sentiment of the text. This function will identify if the text has a positive,
+        neutral, or negative tone. Also, it will indicate how positive, negative, or neutral it is on a scale from 0 to 1, 0 being not positive, and 1 being extremelly positive,
+        for instance. In terms of recommendation, the standard recommendation is to hold, unless in the case of positive or negative values, the weight is >= 0.7</p>
+    <button onclick="analyzeSentiment()">Analyze Sentiment</button>
+    <div id="sentimentResult" class="hidden">
+    <h2>Sentiment Analysis Result:</h2>
+    <p class="left-align"><strong>Sentiment:</strong> <span id="sentimentValue"></span></p>
+    <p class="left-align"><strong>Weight of the most prominent sentiment:</strong> <span id="weightValue"></span></p>
+        <p class="left-align"><strong>Recommendation:</strong> <span id="recommendationValue"></span></p>
+</div>
+<hr/>
+    <p class="text">If knowing that the text is positive or negative still does not satisfy you, feel free to consult our specialists (aka ChatGPT) to
+        to receive a thorough consideration on whether you should buy, sell, or hold your stock at the present moment.</p>
+
+    <button onclick="generateLlamaResponse()">Generate ChatGPT Recommendation</button>
+
+    <div id="llamaResponseResult" class="hidden">
+        <h2>ChatGPT Recommendation:</h2>
+        <p class="left-align"><span id="llamaResponse"></span></p>
+    </div>
+
+    <div id="messageDisplay" class="hidden"></div>
+    <textarea id="storyDisplay" class="hidden"></textarea>
+</div>
+
+<script>
+const defaultServerAddress = 'http://localhost:5000';
+
+function getServerAddress() {
+    const serverAddressInput = document.getElementById("serverAddress");
+    return serverAddressInput.value.trim() || defaultServerAddress;
+}
+
+
+function displayMessage(message, isSuccess = false) {
+    const messageDisplay = document.getElementById("messageDisplay");
+    messageDisplay.textContent = message;
+    messageDisplay.className = isSuccess ? 'success' : 'error';
+    messageDisplay.classList.remove("hidden");
+
+    setTimeout(() => {
+        messageDisplay.classList.add("hidden");
+    }, 3000);
+}
+
+function processURL() {
+    const serverAddress = getServerAddress();
+    const url = document.getElementById("urlInput").value;
+
+    extractTicker(url, serverAddress)
+        .then(ticker => {
+            if (ticker.error) {
+                throw new Error(ticker.error);
+            }
+            document.getElementById("tickerResult").textContent = ticker.ticker;
+            return extractTitle(url, serverAddress);
+        })
+        .then(title => {
+            if (title.error) {
+                throw new Error(title.error);
+            }
+            document.getElementById("titleResult").textContent = title.title;
+            return extractText(url, serverAddress);
+        })
+        .then(text => {
+            if (text.error) {
+                throw new Error(text.error);
+            }
+            document.getElementById("textResult").textContent = text.text;
+            return extractDate(url, serverAddress);
+        })
+        .then(date => {
+            if (date.error) {
+                throw new Error(date.error);
+            }
+            document.getElementById("dateResult").textContent = formatDate(date.date);
+            return extractDateRelevance(url, serverAddress);
+        })
+        .then(dateRelevance => {
+            if (dateRelevance.error) {
+                throw new Error(dateRelevance.error);
+            }
+            document.getElementById("dateRelevanceValue").textContent = dateRelevance.date_relevance;
+            document.getElementById("resultDisplay").classList.remove("hidden");
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            displayMessage(error.toString(), false);
+        });
+}
+
+function extractDateRelevance(url, serverAddress) {
+    return fetch(`${serverAddress}/extract_date_relevance`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url: url})
+    })
+    .then(response => response.json());
+}
+
+function extractTicker(url, serverAddress) {
+    return fetch(`${serverAddress}/extract_ticker`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url: url})
+    })
+    .then(response => response.json());
+}
+
+function extractTitle(url, serverAddress) {
+    return fetch(`${serverAddress}/extract_title`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url: url})
+    })
+    .then(response => response.json());
+}
+
+function extractDate(url, serverAddress) {
+    return fetch(`${serverAddress}/extract_date`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url: url})
+    })
+    .then(response => response.json());
+}
+
+function extractText(url, serverAddress) {
+    return fetch(`${serverAddress}/extract_text`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url: url})
+    })
+    .then(response => response.json());
+}
+function formatDate(isoDateString) {
+    const date = new Date(isoDateString);
+    return date.toISOString().split('T')[0];
+}
+
+function analyzeSentiment() {
+    const serverAddress = getServerAddress();
+    const text = document.getElementById("textResult").textContent;
+
+    analyzeSentimentRequest(text, serverAddress)
+        .then(sentimentResult => {
+            document.getElementById("sentimentValue").textContent = sentimentResult.sentiment;
+            document.getElementById("weightValue").textContent = sentimentResult.weight;
+            document.getElementById("recommendationValue").textContent = sentimentResult.recommendation;
+            document.getElementById("sentimentResult").classList.remove("hidden");
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            displayMessage('Failed to analyze sentiment. Make sure your Flask server is running at the right address and returning values!', false);
+        });
+
+}
+
+function generateLlamaResponse() {
+    const serverAddress = getServerAddress();
+    const text = document.getElementById("textResult").textContent;
+    const sentiment = document.getElementById("sentimentValue").textContent;
+    const recommendation = document.getElementById("recommendationValue").textContent;
+    const dateRelevance = document.getElementById("dateRelevanceValue").textContent;
+    const ticker = document.getElementById("tickerResult").textContent ;
+
+
+    generateLlamaResponseRequest(text, sentiment, recommendation, dateRelevance, serverAddress)
+        .then(llamaResponse => {
+            document.getElementById("llamaResponse").textContent = llamaResponse;
+            document.getElementById("llamaResponseResult").classList.remove("hidden");
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            displayMessage('Failed to generate Llama response. Make sure your Flask server is running at the right address and returning values!', false);
+        });
+}
+
+function analyzeSentimentRequest(text, serverAddress) {
+    return fetch(`${serverAddress}/analyze_sentiment`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ text })
+    })
+    .then(response => response.json());
+}
+
+function generateLlamaResponseRequest(text, sentiment, recommendation, dateRelevance, serverAddress) {
+    return fetch(`${serverAddress}/gpt_response`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ text, sentiment, recommendation, date_relevance: dateRelevance })
+    })
+    .then(response => response.json())
+    .then(data => data.gpt_response);
+}
+function generateLLMResponses() {
+    const serverAddress = getServerAddress();
+    const text = document.getElementById("textResult").textContent;
+    const sentiment = document.getElementById("sentimentValue").textContent;
+    const recommendation = document.getElementById("recommendationValue").textContent;
+    const dateRelevance = document.getElementById("dateRelevanceValue").textContent;
+    const ticker = document.getElementById("tickerResult").textContent;
+
+    generateLLMResponsesRequest(text, sentiment, recommendation, dateRelevance, ticker, serverAddress)
+        .then(responses => {
+            document.getElementById("gptResponse").textContent = responses.gpt_response;
+            document.getElementById("claudeResponse").textContent = responses.claude_response;
+            document.getElementById("llamaResponseResult").classList.remove("hidden");
+            return generateSentimentAnalysisRequest(text, serverAddress);
+        })
+        .then(sentimentAnalysis => {
+            document.getElementById("sentimentAnalysis").textContent = sentimentAnalysis.sentiment_analysis;
+            document.getElementById("sentimentAnalysisResult").classList.remove("hidden");
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            displayMessage('Failed to generate LLM responses. Make sure your Flask server is running at the right address and returning values!', false);
+        });
+}
+
+function generateLLMResponsesRequest(text, sentiment, recommendation, dateRelevance, ticker, serverAddress) {
+    return fetch(`${serverAddress}/generate_llm_responses`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ text, sentiment, recommendation, date_relevance: dateRelevance, ticker })
+    })
+    .then(response => response.json());
+}
+
+function generateSentimentAnalysisRequest(text, serverAddress) {
+    return fetch(`${serverAddress}/generate_sentiment_analysis`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ text })
+    })
+    .then(response => response.json());
+}
+</script>
+</body>
+</html>
+
+</script>
+</body>
+</html>
